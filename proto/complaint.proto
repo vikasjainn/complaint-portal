@@ -1,0 +1,102 @@
+// complaint.proto
+
+syntax = "proto3";
+
+package complaint;
+
+// This path directs the generated code into the correct folder structure.
+option go_package = "./Generated/ComplaintService";
+
+// The core Complaint message
+message Complaint {
+    string id = 1;
+    string title = 2;
+    string summary = 3;
+    int32 severity = 4;
+    bool resolved = 5;
+    string user_id = 6;
+}
+
+// The core User message
+message User {
+    string id = 1;
+    string secret_code = 2;
+    string name = 3;
+    string email = 4;
+    repeated string complaint_ids = 5;
+}
+
+// --- Request and Response Messages for our RPCs ---
+
+// For Register RPC
+message RegisterRequest {
+    string name = 1;
+    string email = 2;
+}
+// The response will be a User message
+
+// For Login RPC
+message LoginRequest {
+    string secret_code = 1;
+}
+// The response will be a User message
+
+// For SubmitComplaint RPC
+message SubmitComplaintRequest {
+    string secret_code = 1;
+    string title = 2;
+    string summary = 3;
+    int32 severity = 4;
+}
+// The response will be a Complaint message
+
+// For GetUserComplaints RPC
+message GetUserComplaintsRequest {
+    string secret_code = 1;
+}
+
+message GetUserComplaintsResponse {
+    repeated Complaint complaints = 1;
+}
+
+// For GetAdminComplaints RPC
+message GetAdminComplaintsRequest {
+    // No parameters needed for this call
+}
+
+message AdminComplaintDetails {
+    string title = 1;
+    string user_name = 2;
+}
+
+message GetAdminComplaintsResponse {
+    repeated AdminComplaintDetails complaints = 1;
+}
+
+// For ViewComplaint RPC
+message ViewComplaintRequest {
+    string secret_code = 1;
+    string complaint_id = 2;
+}
+// The response will be a Complaint message
+
+// For ResolveComplaint RPC
+message ResolveComplaintRequest {
+    string complaint_id = 1;
+}
+
+message ResolveComplaintResponse {
+    string message = 1;
+}
+
+
+// The service definition that ties it all together
+service ComplaintService {
+    rpc Register(RegisterRequest) returns (User);
+    rpc Login(LoginRequest) returns (User);
+    rpc SubmitComplaint(SubmitComplaintRequest) returns (Complaint);
+    rpc GetUserComplaints(GetUserComplaintsRequest) returns (GetUserComplaintsResponse);
+    rpc GetAdminComplaints(GetAdminComplaintsRequest) returns (GetAdminComplaintsResponse);
+    rpc ViewComplaint(ViewComplaintRequest) returns (Complaint);
+    rpc ResolveComplaint(ResolveComplaintRequest) returns (ResolveComplaintResponse);
+}
