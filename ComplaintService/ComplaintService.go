@@ -1,10 +1,9 @@
-// ComplaintService/ComplaintService.go
-// This file contains the API logic for the ComplaintService.
+
 package ComplaintService
 
 import (
 	"complaint-portal/Common"
-	pb "complaint-portal/Generated/ComplaintService" // Import generated protobuf package
+	pb "complaint-portal/Generated/ComplaintService" 
 	"context"
 	"log"
 
@@ -12,12 +11,10 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Server is used to implement the ComplaintServiceServer interface.
 type Server struct {
 	pb.UnimplementedComplaintServiceServer
 }
 
-// Register implements the Register RPC method.
 func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.User, error) {
 	log.Printf(Common.LogReceivedRegister, req.GetName())
 
@@ -52,7 +49,6 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Use
 	}, nil
 }
 
-// Login implements the Login RPC method.
 func (s *Server) Login(ctx context.Context, req *pb.LoginRequest) (*pb.User, error) {
 	log.Println(Common.LogReceivedLogin)
 
@@ -73,7 +69,6 @@ func (s *Server) Login(ctx context.Context, req *pb.LoginRequest) (*pb.User, err
 	}, nil
 }
 
-// SubmitComplaint implements the SubmitComplaint RPC method.
 func (s *Server) SubmitComplaint(ctx context.Context, req *pb.SubmitComplaintRequest) (*pb.Complaint, error) {
 	log.Println(Common.LogReceivedSubmit)
 
@@ -108,7 +103,6 @@ func (s *Server) SubmitComplaint(ctx context.Context, req *pb.SubmitComplaintReq
 	}, nil
 }
 
-// GetUserComplaints implements the GetUserComplaints RPC method.
 func (s *Server) GetUserComplaints(ctx context.Context, req *pb.GetUserComplaintsRequest) (*pb.GetUserComplaintsResponse, error) {
 	log.Println(Common.LogReceivedGetUser)
 
@@ -137,7 +131,6 @@ func (s *Server) GetUserComplaints(ctx context.Context, req *pb.GetUserComplaint
 	return &pb.GetUserComplaintsResponse{Complaints: result}, nil
 }
 
-// GetAdminComplaints implements the GetAdminComplaints RPC method.
 func (s *Server) GetAdminComplaints(ctx context.Context, req *pb.GetAdminComplaintsRequest) (*pb.GetAdminComplaintsResponse, error) {
 	log.Println(Common.LogReceivedGetAdmin)
 
@@ -145,7 +138,6 @@ func (s *Server) GetAdminComplaints(ctx context.Context, req *pb.GetAdminComplai
 	defer Common.Mu.Unlock()
 
 	var result []*pb.AdminComplaintDetails
-	// This nested loop is inefficient but matches the original project's logic.
 	for _, c := range Common.Complaints {
 		for _, u := range Common.Users {
 			if u.ID == c.UserID {
@@ -161,7 +153,6 @@ func (s *Server) GetAdminComplaints(ctx context.Context, req *pb.GetAdminComplai
 	return &pb.GetAdminComplaintsResponse{Complaints: result}, nil
 }
 
-// ViewComplaint implements the ViewComplaint RPC method.
 func (s *Server) ViewComplaint(ctx context.Context, req *pb.ViewComplaintRequest) (*pb.Complaint, error) {
 	log.Println(Common.LogReceivedView)
 
@@ -188,7 +179,6 @@ func (s *Server) ViewComplaint(ctx context.Context, req *pb.ViewComplaintRequest
 	}, nil
 }
 
-// ResolveComplaint implements the ResolveComplaint RPC method.
 func (s *Server) ResolveComplaint(ctx context.Context, req *pb.ResolveComplaintRequest) (*pb.ResolveComplaintResponse, error) {
 	log.Println(Common.LogReceivedResolve)
 

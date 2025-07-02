@@ -1,4 +1,3 @@
-// Common/Common.go
 package Common
 
 import (
@@ -6,7 +5,6 @@ import (
 	"encoding/hex"
 )
 
-// --- Struct Definitions ---
 
 type User struct {
 	ID         string
@@ -25,7 +23,6 @@ type Complaint struct {
 	UserID   string
 }
 
-// --- Utility Functions ---
 
 func GenerateID() string {
 	b := make([]byte, 4)

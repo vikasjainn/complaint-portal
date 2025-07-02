@@ -1,7 +1,5 @@
-// Common/Strvar.go
 package Common
 
-// Log Messages
 const (
 	LogStartingServer      = "Starting gRPC server on port "
 	LogFailedToListen      = "failed to listen: %v"
@@ -15,7 +13,6 @@ const (
 	LogReceivedResolve     = "Received ResolveComplaint request"
 )
 
-// Error Messages
 const (
 	ErrNameAndEmailRequired = "Name and Email are required"
 	ErrEmailAlreadyExists   = "Email already registered"
@@ -25,12 +22,10 @@ const (
 	ErrComplaintAccess      = "Complaint not found or you are not the owner"
 )
 
-// Success Messages
 const (
 	MsgComplaintResolved = "Complaint marked as resolved"
 )
 
-// Network
 const (
 	GRPC_Port = ":50051"
 	TCP       = "tcp"

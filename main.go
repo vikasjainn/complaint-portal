@@ -21,7 +21,6 @@ func main() {
 
 	s := grpc.NewServer()
 
-	// Register our server implementation
 	pb.RegisterComplaintServiceServer(s, &ComplaintService.Server{})
 
 	if err := s.Serve(lis); err != nil {
