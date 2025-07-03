@@ -1,29 +1,20 @@
-// ComplaintService/ComplaintService.go
+
 package ComplaintService
 
 import (
 	"complaint-portal/Common"
-	pb "complaint-portal/Generated/ComplaintService"
+	pb "complaint-portal/Generated/ComplaintService" 
 	"context"
 	"log"
 
-	"cloud.google.com/go/firestore"
-	"google.golang.org/api/iterator"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-// Server is used to implement the ComplaintServiceServer interface.
 type Server struct {
 	pb.UnimplementedComplaintServiceServer
 }
 
-const (
-	usersCollection      = "users"
-	complaintsCollection = "complaints"
-)
-
-// Register implements the Register RPC method using Firestore.
 func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.User, error) {
 	log.Printf(Common.LogReceivedRegister, req.GetName())
 
@@ -31,13 +22,13 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Use
 		return nil, status.Errorf(codes.InvalidArgument, Common.ErrNameAndEmailRequired)
 	}
 
-	// Check if email already exists by querying Firestore
-	iter := Common.FirestoreClient.Collection(usersCollection).Where("Email", "==", req.GetEmail()).Limit(1).Documents(ctx)
-	if _, err := iter.Next(); err != iterator.Done {
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "Failed to query database: %v", err)
+	Common.Mu.Lock()
+	defer Common.Mu.Unlock()
+
+	for _, u := range Common.Users {
+		if u.Email == req.GetEmail() {
+			return nil, status.Errorf(codes.AlreadyExists, Common.ErrEmailAlreadyExists)
 		}
-		return nil, status.Errorf(codes.AlreadyExists, Common.ErrEmailAlreadyExists)
 	}
 
 	user := Common.User{
@@ -47,12 +38,7 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Use
 		Email:      req.GetEmail(),
 		Complaints: []string{},
 	}
-
-	// Use the user's ID as the document ID in Firestore
-	_, err := Common.FirestoreClient.Collection(usersCollection).Doc(user.ID).Set(ctx, user)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Failed to create user: %v", err)
-	}
+	Common.Users[user.SecretCode] = user
 
 	return &pb.User{
 		Id:           user.ID,
@@ -63,21 +49,16 @@ func (s *Server) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.Use
 	}, nil
 }
 
-// Login implements the Login RPC method using Firestore.
 func (s *Server) Login(ctx context.Context, req *pb.LoginRequest) (*pb.User, error) {
 	log.Println(Common.LogReceivedLogin)
 
-	iter := Common.FirestoreClient.Collection(usersCollection).Where("SecretCode", "==", req.GetSecretCode()).Limit(1).Documents(ctx)
-	doc, err := iter.Next()
-	if err == iterator.Done {
+	Common.Mu.Lock()
+	user, ok := Common.Users[req.GetSecretCode()]
+	Common.Mu.Unlock()
+
+	if !ok {
 		return nil, status.Errorf(codes.NotFound, Common.ErrInvalidSecretCode)
 	}
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Failed to query database: %v", err)
-	}
-
-	var user Common.User
-	doc.DataTo(&user)
 
 	return &pb.User{
 		Id:           user.ID,
@@ -88,23 +69,17 @@ func (s *Server) Login(ctx context.Context, req *pb.LoginRequest) (*pb.User, err
 	}, nil
 }
 
-// SubmitComplaint implements the SubmitComplaint RPC method using Firestore.
 func (s *Server) SubmitComplaint(ctx context.Context, req *pb.SubmitComplaintRequest) (*pb.Complaint, error) {
 	log.Println(Common.LogReceivedSubmit)
 
-	// Find user by secret code
-	iter := Common.FirestoreClient.Collection(usersCollection).Where("SecretCode", "==", req.GetSecretCode()).Limit(1).Documents(ctx)
-	userDoc, err := iter.Next()
-	if err == iterator.Done {
+	Common.Mu.Lock()
+	defer Common.Mu.Unlock()
+
+	user, ok := Common.Users[req.GetSecretCode()]
+	if !ok {
 		return nil, status.Errorf(codes.Unauthenticated, Common.ErrUnauthorized)
 	}
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Failed to query user: %v", err)
-	}
-	var user Common.User
-	userDoc.DataTo(&user)
 
-	// Create new complaint
 	complaint := Common.Complaint{
 		ID:       Common.GenerateID(),
 		Title:    req.GetTitle(),
@@ -114,20 +89,9 @@ func (s *Server) SubmitComplaint(ctx context.Context, req *pb.SubmitComplaintReq
 		Resolved: false,
 	}
 
-	// Save complaint to Firestore
-	_, err = Common.FirestoreClient.Collection(complaintsCollection).Doc(complaint.ID).Set(ctx, complaint)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Failed to create complaint: %v", err)
-	}
-
-	// Update user's complaints list
-	_, err = Common.FirestoreClient.Collection(usersCollection).Doc(user.ID).Update(ctx, []firestore.Update{
-		{Path: "Complaints", Value: firestore.ArrayUnion(complaint.ID)},
-	})
-	if err != nil {
-		// Attempt to roll back or log error
-		return nil, status.Errorf(codes.Internal, "Failed to update user with new complaint: %v", err)
-	}
+	Common.Complaints[complaint.ID] = complaint
+	user.Complaints = append(user.Complaints, complaint.ID)
+	Common.Users[req.GetSecretCode()] = user
 
 	return &pb.Complaint{
 		Id:       complaint.ID,
@@ -139,113 +103,70 @@ func (s *Server) SubmitComplaint(ctx context.Context, req *pb.SubmitComplaintReq
 	}, nil
 }
 
-// GetUserComplaints implements the GetUserComplaints RPC method using Firestore.
 func (s *Server) GetUserComplaints(ctx context.Context, req *pb.GetUserComplaintsRequest) (*pb.GetUserComplaintsResponse, error) {
 	log.Println(Common.LogReceivedGetUser)
 
-	// Find user by secret code
-	iter := Common.FirestoreClient.Collection(usersCollection).Where("SecretCode", "==", req.GetSecretCode()).Limit(1).Documents(ctx)
-	userDoc, err := iter.Next()
-	if err == iterator.Done {
+	Common.Mu.Lock()
+	defer Common.Mu.Unlock()
+
+	user, ok := Common.Users[req.GetSecretCode()]
+	if !ok {
 		return nil, status.Errorf(codes.Unauthenticated, Common.ErrUnauthorized)
 	}
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Failed to query user: %v", err)
-	}
-	var user Common.User
-	userDoc.DataTo(&user)
 
 	var result []*pb.Complaint
-	// Find all complaints for that user
-	complaintsIter := Common.FirestoreClient.Collection(complaintsCollection).Where("UserID", "==", user.ID).Documents(ctx)
-	for {
-		complaintDoc, err := complaintsIter.Next()
-		if err == iterator.Done {
-			break
+	for _, id := range user.Complaints {
+		if c, exists := Common.Complaints[id]; exists {
+			result = append(result, &pb.Complaint{
+				Id:       c.ID,
+				Title:    c.Title,
+				Summary:  c.Summary,
+				Severity: int32(c.Severity),
+				UserId:   c.UserID,
+				Resolved: c.Resolved,
+			})
 		}
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "Failed to retrieve complaints: %v", err)
-		}
-		var c Common.Complaint
-		complaintDoc.DataTo(&c)
-		result = append(result, &pb.Complaint{
-			Id:       c.ID,
-			Title:    c.Title,
-			Summary:  c.Summary,
-			Severity: int32(c.Severity),
-			UserId:   c.UserID,
-			Resolved: c.Resolved,
-		})
 	}
 
 	return &pb.GetUserComplaintsResponse{Complaints: result}, nil
 }
 
-// GetAdminComplaints implements the GetAdminComplaints RPC method using Firestore.
 func (s *Server) GetAdminComplaints(ctx context.Context, req *pb.GetAdminComplaintsRequest) (*pb.GetAdminComplaintsResponse, error) {
 	log.Println(Common.LogReceivedGetAdmin)
 
+	Common.Mu.Lock()
+	defer Common.Mu.Unlock()
+
 	var result []*pb.AdminComplaintDetails
-	complaintsIter := Common.FirestoreClient.Collection(complaintsCollection).Documents(ctx)
-	for {
-		complaintDoc, err := complaintsIter.Next()
-		if err == iterator.Done {
-			break
+	for _, c := range Common.Complaints {
+		for _, u := range Common.Users {
+			if u.ID == c.UserID {
+				result = append(result, &pb.AdminComplaintDetails{
+					Title:    c.Title,
+					UserName: u.Name,
+				})
+				break
+			}
 		}
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "Failed to retrieve complaints: %v", err)
-		}
-
-		var c Common.Complaint
-		complaintDoc.DataTo(&c)
-
-		// Get the user for this complaint
-		userDoc, err := Common.FirestoreClient.Collection(usersCollection).Doc(c.UserID).Get(ctx)
-		if err != nil {
-			// Log the error but continue, maybe the user was deleted
-			log.Printf("Could not find user %s for complaint %s: %v", c.UserID, c.ID, err)
-			continue
-		}
-		var u Common.User
-		userDoc.DataTo(&u)
-
-		result = append(result, &pb.AdminComplaintDetails{
-			Title:    c.Title,
-			UserName: u.Name,
-		})
 	}
 
 	return &pb.GetAdminComplaintsResponse{Complaints: result}, nil
 }
 
-// ViewComplaint implements the ViewComplaint RPC method using Firestore.
 func (s *Server) ViewComplaint(ctx context.Context, req *pb.ViewComplaintRequest) (*pb.Complaint, error) {
 	log.Println(Common.LogReceivedView)
 
-	// Find user by secret code to authorize
-	iter := Common.FirestoreClient.Collection(usersCollection).Where("SecretCode", "==", req.GetSecretCode()).Limit(1).Documents(ctx)
-	userDoc, err := iter.Next()
-	if err == iterator.Done {
+	Common.Mu.Lock()
+	defer Common.Mu.Unlock()
+
+	user, ok := Common.Users[req.GetSecretCode()]
+	if !ok {
 		return nil, status.Errorf(codes.Unauthenticated, Common.ErrUnauthorized)
 	}
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Failed to query user: %v", err)
-	}
-	var user Common.User
-	userDoc.DataTo(&user)
 
-	// Get the complaint
-	complaintDoc, err := Common.FirestoreClient.Collection(complaintsCollection).Doc(req.GetComplaintId()).Get(ctx)
-	if err != nil {
-		return nil, status.Errorf(codes.NotFound, Common.ErrComplaintNotFound)
-	}
-
-	var complaint Common.Complaint
-	complaintDoc.DataTo(&complaint)
-
-	// Check if the user owns the complaint
-	if complaint.UserID != user.ID {
-		return nil, status.Errorf(codes.PermissionDenied, Common.ErrComplaintAccess)
+	complaint, exists := Common.Complaints[req.GetComplaintId()]
+	if !exists || complaint.UserID != user.ID {
+		return nil, status.Errorf(codes.NotFound, Common.ErrComplaintAccess)
 	}
 
 	return &pb.Complaint{
@@ -258,18 +179,19 @@ func (s *Server) ViewComplaint(ctx context.Context, req *pb.ViewComplaintRequest
 	}, nil
 }
 
-// ResolveComplaint implements the ResolveComplaint RPC method using Firestore.
 func (s *Server) ResolveComplaint(ctx context.Context, req *pb.ResolveComplaintRequest) (*pb.ResolveComplaintResponse, error) {
 	log.Println(Common.LogReceivedResolve)
 
-	// Update the complaint document
-	_, err := Common.FirestoreClient.Collection(complaintsCollection).Doc(req.GetComplaintId()).Update(ctx, []firestore.Update{
-		{Path: "Resolved", Value: true},
-	})
+	Common.Mu.Lock()
+	defer Common.Mu.Unlock()
 
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Failed to update complaint: %v", err)
+	complaint, ok := Common.Complaints[req.GetComplaintId()]
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, Common.ErrComplaintNotFound)
 	}
+
+	complaint.Resolved = true
+	Common.Complaints[req.GetComplaintId()] = complaint
 
 	return &pb.ResolveComplaintResponse{Message: Common.MsgComplaintResolved}, nil
 }
