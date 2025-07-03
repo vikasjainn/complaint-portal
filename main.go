@@ -12,6 +12,10 @@ import (
 )
 
 func main() {
+	// Initialize Firebase first
+	Common.InitFirebase()
+	defer Common.FirestoreClient.Close() // Ensure the client is closed when the app exits
+
 	log.Printf(Common.LogStartingServer + Common.GRPC_Port)
 
 	lis, err := net.Listen(Common.TCP, Common.GRPC_Port)
@@ -21,6 +25,7 @@ func main() {
 
 	s := grpc.NewServer()
 
+	// Register our server implementation
 	pb.RegisterComplaintServiceServer(s, &ComplaintService.Server{})
 
 	if err := s.Serve(lis); err != nil {

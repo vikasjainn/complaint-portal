@@ -23,7 +23,6 @@ message User {
     repeated string complaint_ids = 5;
 }
 
-
 message RegisterRequest {
     string name = 1;
     string email = 2;
